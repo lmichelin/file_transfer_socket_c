@@ -1,5 +1,6 @@
 *.o
 *.txt
+*.jpg
 client
 server
 client_folder

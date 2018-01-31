@@ -17,14 +17,14 @@
 
 int DFLAG;
 
-char *srv_name = "localhost";
+char srv_name[256];
 
 /* Établit une session TCP vers srv_name sur le port srv_port
- * char *srv_name: nom du serveur (peut-être une adresse IP)
- * char *srv_port: port sur lequel la connexion doit être effectuée
- *
- * retourne: descripteur vers la socket
- */
+* char *srv_name: nom du serveur (peut-être une adresse IP)
+* char *srv_port: port sur lequel la connexion doit être effectuée
+*
+* retourne: descripteur vers la socket
+*/
 int connect_to_server(char *srv_name, char *srv_port){
   struct addrinfo hints;
   memset(&hints, 0, sizeof(struct addrinfo));
@@ -73,19 +73,19 @@ int connect_to_server(char *srv_name, char *srv_port){
 }
 
 /* Lit le contenu du fichier par block de taille BUFF_SIZE
- * int fd: descripteur du fichier ouvert en écriture
- * int sd: descripteur de la socket
- * int fz: taille du fichier à recevoir en octets
- *
- * retourne: nombre d'octets effectivement reçus ou -1 en cas d'erreur
- */
+* int fd: descripteur du fichier ouvert en écriture
+* int sd: descripteur de la socket
+* int fz: taille du fichier à recevoir en octets
+*
+* retourne: nombre d'octets effectivement reçus ou -1 en cas d'erreur
+*/
 int reception_fichier(int fd, int sd, int fz)
 {
   int nb_recv = 0;                    // nombre total d'octet reçus
 
   unsigned char code, size;
 
-  char buffer[BUFF_SIZE];
+  char buffer[256];
   char* data = buffer;
 
   // si fichier vide, retourner 0
@@ -98,7 +98,7 @@ int reception_fichier(int fd, int sd, int fz)
     }
     write(fd, data, size-HEADSIZE);
     nb_recv += size-HEADSIZE;
-    printf("Received %ld bytes and we hope :- %d bytes\n", size-HEADSIZE, fz-nb_recv);
+    printf("Received %ld bytes and we hope %d more\n", size-HEADSIZE, fz-nb_recv);
   }
   close(fd);
 
@@ -116,8 +116,7 @@ int main(int argc, char *argv[])
   int file_size;                      // taille du fichier à télécharger
   int nb_recv = 0;                    // nombre total d'octet reçus
 
-  char file_name[BUFF_SIZE];
-
+  char file_name[256];
 
   unsigned char code, size;           // code et taille des données reçues
   char *data;                         // données reçues
@@ -125,16 +124,23 @@ int main(int argc, char *argv[])
 
   DFLAG = 1;
 
-  if (argc < 2)
-    {
-      printf("%s prends comme argument le nom d'un fichier\n", argv[0]);
-      exit(-1);
-    }
+  if (argc < 2) {
+    printf("syntax : %s filename [hostname]\n", argv[0]);
+    exit(-1);
+  } else if (argc == 3) {
+    strncpy(srv_name, argv[2], 256);
+  } else {
+    strncpy(srv_name, "localhost", 256);
+  }
 
-  strncpy(file_name, argv[1], BUFF_SIZE);
+  strncpy(file_name, argv[1], 256);
 
   // Création de la socket et connexion au serveur
   clt_sock = connect_to_server(srv_name, srv_port);
+
+  if (clt_sock == -1) {
+    exit(-1);
+  }
 
   // Envoi de la requête contenant le nom du fichier à télécharger
 
@@ -144,7 +150,7 @@ int main(int argc, char *argv[])
   }
 
   // Réception de la réponse du serveur
-  char buffer[BUFF_SIZE];
+  char buffer[256];
   data = buffer;
   int size_received = recv_msg(clt_sock, &code, &size, &data);
   if (size_received == -1) {
@@ -153,28 +159,28 @@ int main(int argc, char *argv[])
 
   // Test du code d'erreur retourné par le serveur
   if (code == DO_NOT_EXIST) {
-    printf("Le fichier n'existe pas\n");
+    printf("File does not exist\n");
     return -1;
   } else if (code == ACCESS_DENIED) {
-    printf("Fichier inaccessible : mauvaises permissions\n");
+    printf("Unable to access file : bad permissions\n");
     return -1;
   }
 
   file_size = atoi(buffer);
-  printf("Le fichier %s fait %d octets\n", file_name, file_size);
+  printf("The file %s is %d bytes long\n", file_name, file_size);
 
   // Création du fichier destination
   file_fd = open(file_name, O_CREAT|O_WRONLY|O_TRUNC, 00644);
 
   if ( file_fd == -1 ) {
-    perror("client: erreur lors de la création du fichier");
+    perror("client: error while creating file");
     send_msg(clt_sock, END_ERROR, 0, NULL);
     exit(-1);
   }
 
   // Récupération du contenu du fichier
   nb_recv = reception_fichier(file_fd, clt_sock, file_size);
-  printf("%d octets reçus\n", nb_recv);
+  printf("Received %d bytes\n", nb_recv);
 
   close(clt_sock);
 

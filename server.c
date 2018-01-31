@@ -58,7 +58,6 @@ int create_a_listening_socket(char *srv_port, int maxconn){
       close(srv_sock);
       continue;
     } else {
-      printf("bind successful !\n");
       break;
     }
   }
@@ -108,7 +107,7 @@ int accept_clt_conn(int srv_sock, struct sockaddr_storage *clt_sockaddr) {
 * retourne: nombre d'octets effectivement transmis
 */
 ssize_t transfert_fichier(int sd, int fd) {
-  char buff[BUFF_SIZE];
+  char buff[256];
 
   ssize_t size;                  // nombre d'octets échangés
   ssize_t nb_sent = 0;           // nombre total d'octets envoyés
@@ -117,15 +116,20 @@ ssize_t transfert_fichier(int sd, int fd) {
   et envoi du contenu au client */
 
   while ((size = read(fd, buff, BUFF_SIZE)) && size > 0) {
-    send_msg(sd, DATA, size, buff);
-    
-    nb_sent += size;
-    printf("Send %ld bytes\n", nb_sent);
+    if (send_msg(sd, DATA, size, buff) != -1) {
+      nb_sent += size;
+      printf("%ld bytes send\n", nb_sent);
+    } else {
+      return -1;
+    }
+
   }
   close(fd);
 
   /* Envoi du message de fin de fichier */
-  send_msg(sd, END_OK, 0, NULL);
+  if (send_msg(sd, END_OK, 0, NULL) == -1) {
+    return -1;
+  }
 
   return nb_sent;
 }
@@ -140,7 +144,7 @@ int requete_client(int sock)
   struct stat file_stat;
   unsigned char code;
   unsigned char size;
-  char file_size[BUFF_SIZE];
+  char file_size[256];
 
   // Réception de la requête contenant le nom du fichier à télécharger
   char file_name[256];
@@ -190,7 +194,6 @@ int requete_client(int sock)
   }
 
   return file_fd;
-
 }
 
 int main(void)
@@ -204,29 +207,39 @@ int main(void)
 
   // création de la socket
   socket_fd = create_a_listening_socket(SRV_PORT,BACK_LOG);
+  if (socket_fd == -1) {
+    PERROR("create listening socket");
+    exit(-1);
+  }
+
+  printf("Magic happens on port %s.\n", SRV_PORT);
 
   for (;;) // boucle infinie: en attende de demande de connexion
   {
-  // acceptation d'une demande de connexion
-  printf("Waiting for connection...\n");
-  con_fd = accept_clt_conn(socket_fd, &sockaddr_client);
-  if (con_fd == -1) {
-    PERROR("connection not accepted");
-    continue;
-  }
-  // lecture de la requête client
-  file_fd = requete_client(con_fd);
-  if(file_fd == -1) {
-    PERROR("error while opening file");
-    continue;
-  }
+    // acceptation d'une demande de connexion
+    printf("Waiting for connection...\n");
+    con_fd = accept_clt_conn(socket_fd, &sockaddr_client);
+    if (con_fd == -1) {
+      PERROR("connection not accepted");
+      continue;
+    }
+    // lecture de la requête client
+    file_fd = requete_client(con_fd);
+    if(file_fd == -1) {
+      PERROR("error while opening file");
+      continue;
+    }
 
-  // transfert du fichier
-  int nbre_send = transfert_fichier(con_fd, file_fd);
-  printf("Octets envoyés : %d\n", nbre_send);
+    // transfert du fichier
+    int nbre_send = transfert_fichier(con_fd, file_fd);
+    if (nbre_send == -1) {
+      printf("Connection lost !\n");
+    } else {
+      printf("File successfully send (%d bytes)\n", nbre_send);
+    }
 
-  // fermeture du fichier
-  close(file_fd);
+    // fermeture du fichier
+    close(file_fd);
 
   } // fin for
 
